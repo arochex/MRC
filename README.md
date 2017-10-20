@@ -14,8 +14,16 @@ pyMRC is a code that use multi emission line ratios to derive the oxygen abundan
 Next, the elements and operation of the pyMRC code is presented. 
 
 
+O/H [MRC] = F(Pi,Pj) 
 
+1. Te-based HII regions sample
+2. O/H (Te-based)  
+3. Multiple emission line ratios
 
+4. Natural Neighbour Interpolation 
+5. 2D polynomial fitting  	
+6. 2D polynomial coefficients
+7. O/H (MRC) 
 
 # HOW TO USE THE CODES
 
@@ -94,10 +102,4 @@ d. polynomial coefficient
 
 
 # REFERENCES
-#
-# MRC
-# MRC
-# MRC
-# MRC
-# MRC
-# MRC
+
