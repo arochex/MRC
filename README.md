@@ -28,10 +28,10 @@ O/H [MRC] = F(Pi,Pj)
 # HOW TO USE THE CODES
 
 
-A. polyfitter.py : Is the script that calculate the interpolation and the 2D polynomail fitting and evaluation.
-B. coeff_#.fits : Are the 2D polynomial coefficients necessary to do the polynomial evaluation
+1. polyfitter.py : Is the script that calculate the interpolation and the 2D polynomail fitting and evaluation.
+2. coeff_5.fits : Are the 2D polynomial coefficients necessary to do the polynomial evaluation
 
-
+------------------------------------------------------------------------------------------------------------------------------
 1. poly_coeff_MC.py : to calculate the polynomial coeffcients  
 
 
@@ -99,6 +99,8 @@ a. flux_catalog_NGC628
 b. coordinates_catalog_NGC628
 c. OH_abundaces corrected by extintion
 d. polynomial coefficient
+
+----------------------------------------------------------------------------------------------------------------------
 
 
 # REFERENCES
