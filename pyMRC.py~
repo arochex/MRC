@@ -1,0 +1,871 @@
+#!/usr/bin/env python
+#-*- coding-utf-8 -*-
+
+
+__autores__ = "A.A.Aroche & S.F. Sanchez"
+__date__ = "2017"
+
+#Abundances 
+
+import sys
+import csv
+import argparse
+import matplotlib.pyplot as plt
+from matplotlib import mpl
+from scipy.stats import gaussian_kde
+import pyfits
+import itertools
+from numpy import *
+import numpy as np
+import math
+import pandas as pd
+from pylab import polyfit,poly1d
+from scipy import ndimage
+from matplotlib.mlab import griddata
+from astropy.table import Table
+import random as rnd
+from mpl_toolkits.mplot3d import Axes3D
+import numpy.ma as ma
+import matplotlib.cm as cm
+#import seaborn as sns
+#sns.set(style="white", color_codes=True)
+#sns.set()
+from mpl_toolkits.axes_grid1 import make_axes_locatable
+from matplotlib import ticker
+import polyfitter as plf
+
+#======================DEFINITIONS======================#
+#SLEs
+'''
+R2 = OII3727
+R3 = OIII5007 
+N2= NII6584 
+S2a = SII6717  
+S2b = SII6731  
+'''
+#=======================CONSTANTS=======================#
+
+R_25 = 14.1  #Optical radius in (kpc) at the B_25 mag arcsec(-2). Rosales-Ortega et al. (2010)
+rho = 314   #arcsec #Size of the optical radius $\rho_{25}$ in arsec
+A = 58   #arcsec
+B = 5    #adimensionless
+C = 44   #1/rads
+
+#--------------------------------------------------------------------------#
+
+#-------Command line input files--------------#
+
+usage = 'Usage: %s infile' % sys.argv[0]
+
+try:
+    input_file = sys.argv[1]      #catalogo Marino OH_Te
+    input_file = sys.argv[2]      #fluxes NGC628
+    input_file = sys.argv[3]      #coordinates NGC628
+    input_file = sys.argv[4]      #OH_abundances NGC628_Thesis
+    input_file = sys.argv[5]      #coeficientes de orden n
+    #input_file = sys.argv[]      #catalogo de regiones HII con abundancias. Tesis
+except:
+    print usage; sys.exit(1)
+
+
+#--------------------Reading the fits file--------------------#
+
+input_fits = sys.argv[5]
+hdu_coeffs = pyfits.open(input_fits)
+
+coeffs_out = hdu_coeffs[0].data
+e_coeffs_out = hdu_coeffs[1].data
+#print np.array(e_coeffs_out)
+
+#f, ax = plt.subplots()
+#ax.imshow(coeffs_out)
+#plt.show()
+
+
+#---------------------HII regions catalogues----------------------#
+
+#-----------Marino et al. (2013)---------------#
+#Clipped catalogue
+input_file = sys.argv[1]
+
+g = pd.read_csv(input_file, comment = '#', header=None)
+
+
+OII3727 = g[2]
+OII3729 = g[3]
+OIII4959 = g[5]
+OIII5007 = g[6]
+NII6548 = g[8]
+NII6584 = g[9]
+SII6717 = g[11]
+SII6731 = g[12]
+
+OH_Te = ma.masked_where(g[16] == 0,g[16])
+#print len(OH_Te)
+
+#Proposed ratios
+#Following the Pilyugin et al. (2010) notation
+
+R2_M = OII3727 + OII3729
+R3_M = OIII4959 + OIII5007
+N2_M = NII6548 + NII6584
+S2_M = SII6717 + SII6731
+
+N2a = NII6584
+
+N2R3_M = N2_M/R3_M 
+R3N2_M = R3_M/N2_M
+R23_M = R2_M+R3_M
+R3R2_M = R3_M/R2_M
+N2R2_M = N2_M/R2_M
+N2S2_M = N2_M/S2_M
+
+#Ionization parameter
+P_M = R3_M/(R23_M)
+
+
+#----------NGC628. Sanchez et al. (2011)-----------#
+#Fluxes
+input_file = sys.argv[2]
+
+f = pd.read_csv(input_file, comment = '#', header=None)
+
+
+R2  = ma.masked_invalid(f[3].astype(float))
+#print R2
+R3  = ma.masked_invalid(f[5].astype(float))
+Ha  = ma.masked_invalid(f[9].astype(float))
+NII  = ma.masked_invalid(f[11].astype(float))
+N2 = NII/Ha
+S2a  = ma.masked_invalid(f[15].astype(float))
+S2b  = ma.masked_invalid(f[17].astype(float))
+
+S2 = S2a+S2b
+
+R3N2 = R3/N2
+#print R3N2
+R23 =  R2+R3
+R3R2 = R3/R2
+N2R2 = N2/R2
+N2S2 = N2/S2
+
+P = R3/(R23)
+
+#color = f[19]
+#colormap = np.array(['b','g','r','k'])
+#------------------------------------------------------------------#
+
+#----NGC628.HII.Coordinates-----#
+#Radial Gradient and 2D maps distribution OH abundances
+
+input_file = sys.argv[3]
+h = pd.read_csv(input_file, comment = '#', header=None)
+
+# delta right ascension from the center (arcsec)
+# delta declination from the center
+
+delta_RA = h[3]
+delta_DEC =h[4]
+
+#Galactocentric radius (kpc) 
+
+R = h[7] 
+
+#Normalized radius
+
+radius = R/R_25
+#print radius
+
+
+
+#=========================CALIBRATORS======================#
+
+#--------O3N2 & N2 methods. Marino et al. (2013)-----------#
+
+
+M_O3N2 = 8.533 - 0.214*log10((2.87)*(R3_M/N2_M))
+
+M_N2 = 8.743 + 0.462*log10((1/2.86)*N2_M)
+
+
+#-------ONS method. Pilyugin et al. (2010)-----------------#
+
+OH_ONS = lambda a, R2_M, R3_M, N2_M, S2_M, P_M: (a[0] + a[1]*P_M + a[2]*np.log10(R3_M) + a[3]*np.log10(N2_M/R2_M)+ a[4]*np.log10(S2_M/R2_M))
+
+#ONS coefficients
+
+a_cool = (8.277, 0.657, -0.399, -0.061, 0.005)
+a_warm = (8.816, -0.733, 0.454, 0.710, -0.337)
+a_hot = (8.774, -1.855, 1.517, 0.304, 0.328)
+
+#select regions (cool,warm,hot)
+
+M_Pil = []
+
+for j in range(0,len(g[6])):
+    
+    if log10(N2_M[j]) > -0.1:
+        ONS = OH_ONS(a_cool, R2_M[j], R3_M[j], N2_M[j], S2_M[j], P_M[j])
+
+    if log10(N2_M[j]) < -0.1 and log10(N2_M[j]/S2_M[j]) > -0.25:
+        ONS = OH_ONS(a_warm, R2_M[j], R3_M[j], N2_M[j], S2_M[j], P_M[j])
+    
+    if log10(N2_M[j]) < -0.1 and log10(N2_M[j]/S2_M[j]) < -0.25:
+        ONS = OH_ONS(a_hot, R2_M[j], R3_M[j], N2_M[j], S2_M[j], P_M[j])
+
+    M_Pil.append(ONS)
+
+
+#=========================CALIBRATORS. NGC628======================#
+
+#--------O3N2 & N2 methods. Marino et al. (2013)-----------#
+
+
+ngc_O3N2 = 8.533 - 0.214*log10((R3/N2))
+
+ngc_N2 = 8.743 + 0.462*log10(N2)
+
+
+#-------ONS method. Pilyugin et al. (2010)-----------------#
+
+OH_ONS = lambda a, R2, R3, N2, S2, P: (a[0] + a[1]*P + a[2]*np.log10(R3) + a[3]*np.log10(N2/R2)+ a[4]*np.log10(S2/R2))
+
+#ONS coefficients
+
+a_cool = (8.277, 0.657, -0.399, -0.061, 0.005)
+a_warm = (8.816, -0.733, 0.454, 0.710, -0.337)
+a_hot = (8.774, -1.855, 1.517, 0.304, 0.328)
+
+#select regions (cool,warm,hot)
+
+Pilyugin = []
+
+for j in range(0,len(f[6])):
+    
+    if log10(N2[j]) > -0.1:
+       ONS = OH_ONS(a_cool, R2[j], R3[j], N2[j], S2[j], P[j])
+
+    if log10(N2[j]) < -0.1 and log10(N2[j]/S2[j]) > -0.25:
+        ONS = OH_ONS(a_warm, R2[j], R3[j], N2[j], S2[j], P[j])
+    
+    if log10(N2[j]) < -0.1 and log10(N2[j]/S2[j]) < -0.25:
+        ONS = OH_ONS(a_hot, R2[j], R3[j], N2[j], S2[j], P[j])
+
+    Pilyugin.append(ONS)
+
+Pilyu = ma.masked_invalid(Pilyugin)
+
+#=========Calibradores NGC628==========#
+
+
+
+#================OH_calibrator_Tesis_Marino_2013====================#
+
+#Polyval2d evaluate a 2-D polynomial at points (x, y). This function returns the value. p(x,y) = \\sum_{i,j} c_{i,j} * x^i * y^j.
+
+
+c_R3N2_R23  =coeffs_out[0,:]
+c_R3N2_N2   =coeffs_out[1,:]
+c_R23_N2    =coeffs_out[2,:]
+c_R23_N2R2  =coeffs_out[3,:]
+c_N2R2_N2   =coeffs_out[4,:]
+c_N2_R3     =coeffs_out[5,:]
+c_R3N2_R3R2 =coeffs_out[6,:]
+c_R3R2_N2R2 =coeffs_out[7,:]
+c_R3R2_N2   =coeffs_out[8,:]
+c_N2S2_R3N2 =coeffs_out[9,:]
+c_N2S2_R23  =coeffs_out[10,:]
+c_N2S2_N2R2 =coeffs_out[11,:]
+c_N2S2_N2   =coeffs_out[12,:]
+
+
+OH_R3N2_R23  = plf.polyval2d(log10(R3N2_M),log10(R23_M),c_R3N2_R23)
+OH_R3N2_N2   = plf.polyval2d(log10(R3N2_M),log10(N2_M),c_R3N2_N2)
+OH_R23_N2    = plf.polyval2d(log10(R23_M),log10(N2_M),c_R23_N2)
+OH_R23_N2R2  = plf.polyval2d(log10(R23_M),log10(N2R2_M),c_R23_N2R2)
+OH_N2R2_N2   = plf.polyval2d(log10(N2R2_M),log10(N2_M),c_N2R2_N2)
+OH_N2_R3     = plf.polyval2d(log10(N2_M),log10(R3_M),c_N2_R3)
+OH_R3N2_R3R2 = plf.polyval2d(log10(R3N2_M),log10(R3R2_M),c_R3N2_R3R2)
+OH_R3R2_N2R2 = plf.polyval2d(log10(R3R2_M),log10(N2R2_M),c_R3R2_N2R2)
+OH_R3R2_N2   = plf.polyval2d(log10(R3R2_M),log10(N2_M),c_R3R2_N2)
+OH_N2S2_R3N2 = plf.polyval2d(log10(N2S2_M),log10(R3N2_M),c_N2S2_R3N2)
+OH_N2S2_R23  = plf.polyval2d(log10(N2S2_M),log10(R23_M),c_N2S2_R23)
+OH_N2S2_N2R2 = plf.polyval2d(log10(N2S2_M),log10(N2R2_M),c_N2S2_N2R2)
+OH_N2S2_N2   = plf.polyval2d(log10(N2S2_M),log10(N2_M),c_N2S2_N2)
+
+                
+            
+OH_array_M = np.array([OH_R3N2_R23,OH_R3N2_N2,OH_R23_N2,OH_R23_N2R2,OH_N2R2_N2,OH_N2_R3,OH_R3N2_R3R2,OH_R3R2_N2R2,OH_R3R2_N2,OH_N2S2_R3N2,OH_N2S2_R23,OH_N2S2_N2R2,OH_N2S2_N2])
+
+OH_mean_out_M = ma.masked_invalid(np.median(OH_array_M,axis=0))    #Oxygen Abundances outcomes
+Delta_mean_OH_M =  OH_Te - OH_mean_out_M
+#print Delta_mean_OH_M
+mean_Delta_OH_mean_M = np.mean(Delta_mean_OH_M)
+sigma_Delta_OH_mean_M = np.std(Delta_mean_OH_M)
+#print OH_mean_out_M
+#np.savetxt('OH_out_M.csv',OH_mean_out_M,fmt='%1.5f')
+
+print 'offset O/H =', mean_Delta_OH_mean_M, sigma_Delta_OH_mean_M
+
+#======================OH_calibrator_Tesis_NGC628=======================#
+
+#Polyval2d evaluate a 2-D polynomial at points (x, y). This function returns the value. p(x,y) = \\sum_{i,j} c_{i,j} * x^i * y^j.
+
+
+c_R3N2_R23  =coeffs_out[0,:]
+c_R3N2_N2   =coeffs_out[1,:]
+c_R23_N2    =coeffs_out[2,:]
+c_R23_N2R2  =coeffs_out[3,:]
+c_N2R2_N2   =coeffs_out[4,:]
+c_N2_R3     =coeffs_out[5,:]
+c_R3N2_R3R2 =coeffs_out[6,:]
+c_R3R2_N2R2 =coeffs_out[7,:]
+c_R3R2_N2   =coeffs_out[8,:]
+c_N2S2_R3N2 =coeffs_out[9,:]
+c_N2S2_R23  =coeffs_out[10,:]
+c_N2S2_N2R2 =coeffs_out[11,:]
+c_N2S2_N2   =coeffs_out[12,:]
+
+
+OH_R3N2_R23  = plf.polyval2d(log10(R3N2),log10(R23),c_R3N2_R23)
+OH_R3N2_N2   = plf.polyval2d(log10(R3N2),log10(N2),c_R3N2_N2)
+OH_R23_N2    = plf.polyval2d(log10(R23),log10(N2),c_R23_N2)
+OH_R23_N2R2  = plf.polyval2d(log10(R23),log10(N2R2),c_R23_N2R2)
+OH_N2R2_N2   = plf.polyval2d(log10(N2R2),log10(N2),c_N2R2_N2)
+OH_N2_R3     = plf.polyval2d(log10(N2),log10(R3),c_N2_R3)
+OH_R3N2_R3R2 = plf.polyval2d(log10(R3N2),log10(R3R2),c_R3N2_R3R2)
+OH_R3R2_N2R2 = plf.polyval2d(log10(R3R2),log10(N2R2),c_R3R2_N2R2)
+OH_R3R2_N2   = plf.polyval2d(log10(R3R2),log10(N2),c_R3R2_N2)
+OH_N2S2_R3N2 = plf.polyval2d(log10(N2S2),log10(R3N2),c_N2S2_R3N2)
+OH_N2S2_R23  = plf.polyval2d(log10(N2S2),log10(R23),c_N2S2_R23)
+OH_N2S2_N2R2 = plf.polyval2d(log10(N2S2),log10(N2R2),c_N2S2_N2R2)
+OH_N2S2_N2   = plf.polyval2d(log10(N2S2),log10(N2),c_N2S2_N2)
+
+                
+            
+OH_array = np.array([OH_R3N2_R23,OH_R3N2_N2,OH_R23_N2,OH_R23_N2R2,OH_N2R2_N2,OH_N2_R3,OH_R3N2_R3R2,OH_R3R2_N2R2,OH_R3R2_N2,OH_N2S2_R3N2,OH_N2S2_R23,OH_N2S2_N2R2,OH_N2S2_N2])
+          
+OH_mean_out_628 = np.median(OH_array,axis=0)    #Oxygen Abundances outcomes
+OH_mean_out_628 = ma.masked_where(OH_mean_out_628 == 0,OH_mean_out_628)
+
+Delta_mean_OH_628_1 = ma.masked_invalid(OH_mean_out_628 - Pilyugin)
+Delta_mean_OH_628_2 =  OH_mean_out_628 - ngc_O3N2
+Delta_mean_OH_628_3 =  OH_mean_out_628 - ngc_N2 
+
+mean_Delta_OH_mean_1 = np.mean(Delta_mean_OH_628_1)
+sigma_Delta_OH_mean_1 = np.std(Delta_mean_OH_628_1)
+mean_Delta_OH_mean_2 = np.mean(Delta_mean_OH_628_2)
+sigma_Delta_OH_mean_2 = np.std(Delta_mean_OH_628_2)
+mean_Delta_OH_mean_3 = np.mean(Delta_mean_OH_628_3)
+sigma_Delta_OH_mean_3 = np.std(Delta_mean_OH_628_3)
+
+print 'offset O/H_628_ONS:', mean_Delta_OH_mean_1, sigma_Delta_OH_mean_1
+print 'offset O/H_628_O3N2:', mean_Delta_OH_mean_2, sigma_Delta_OH_mean_2
+print 'offset O/H_628_N2:', mean_Delta_OH_mean_3, sigma_Delta_OH_mean_3
+
+#np.savetxt('OH_out_628.csv',OH_mean_out_628,fmt='%1.5f')
+#print OH_mean_out_628
+
+
+#--------------------OH_out_NGC628---------------------#
+
+input_file = sys.argv[4]
+c = pd.read_csv(input_file, comment = '#', header = None) 
+
+OH = ma.masked_where(c[0] == 0,c[0])
+
+#OH = c[0]
+#print len(OH)
+
+#=========================Plots===============================#
+'''
+#RADIAL GRADIENTS O/H
+#sys.exit()
+
+cm = plt.cm.get_cmap('nipy_spectral')
+
+f1, ax1 = plt.subplots(figsize=(10, 8))
+
+f1.patch.set_facecolor('white')
+ax1.set_ylim((7,10))
+size=60
+alpha = 0.6
+ax1.scatter(radius,OH_mean_out_628,c='b',marker='h', s=90 ,label='NGC628', alpha=alpha,cmap=cm)
+ax1.set_xlabel(r'Radius $\mathsf{\rho/\rho_{25}}$',fontsize=20)
+ax1.set_ylabel(r'$\mathsf{12 + log(O/H) [Tesis]}$',fontweight='bold',fontsize=20)
+ax1.text(0.69, 9.8, 'NGC628', style='italic',bbox={'facecolor':'red', 'alpha':0.5, 'pad':20})
+#ax1.set_title("OH_out_NGC628_",fontweight='bold',fontsize=18)
+ax1.minorticks_on()
+ax1.tick_params(axis='both',which='minor',length=5,width=2,labelsize=18)
+ax1.tick_params(axis='both',which='major',length=11,width=2,labelsize=18)
+f1.tight_layout()
+plt.show()
+plt.ion()
+
+'''
+'''
+#2D oxygen abundances maps
+cm = plt.cm.get_cmap('nipy_spectral')
+f1, ax1 = plt.subplots(figsize=(10, 8))
+ax1 = plt.subplot(111, polar=False)
+f1.patch.set_facecolor('white')
+circ=plt.Circle((0,0), radius=rho, ec='k',linewidth=1,fill=False)
+plt.gca().add_patch(circ)
+#plt.axis('scaled')
+
+ax1.axvline(x=0, c='k')
+ax1.axhline(y=0, c='k')
+
+ax1.set_xlim((250,-250))
+ax1.set_ylim((-250,250))
+#ax1.plot((6.5,9.5), (6.5,9.5), 'r',linewidth=1)
+#size=60
+alpha = 1
+
+ax1 = plt.gca()
+divider = make_axes_locatable(ax1)
+cax = divider.append_axes("right", size="7%", pad=0.01)
+
+
+#Analytical characterization of the spiral arms of NGC628
+#S.F. Sanchez et al. (2012)
+
+theta = np.arange(0.0,2*np.pi, 0.015)
+r = A/(np.log(B*np.tan(theta/(2*C)))) 
+
+ax1.plot(-3*r*np.cos(theta),3*r*np.sin(theta),'k', lw=1)
+ax1.plot(3*r*np.cos(theta),-3*r*np.sin(theta), 'k',lw=1)
+
+sc = ax1.scatter(delta_RA,delta_DEC,c=OH,s=20*OH,marker='8',label='NGC628', alpha=alpha,cmap=cm)
+cb = plt.colorbar(sc,cax=cax)
+cb.ax.tick_params(labelsize=16)
+
+#sc = ax1.scatter(50.6,46.9,c='k',s=100,marker='*',label='NGC628', alpha=alpha,cmap=cm)
+#sc = ax1.scatter(49.8,47.2,c='g',s=100,marker='d',label='NGC628', alpha=alpha,cmap=cm)
+'''
+
+
+'''
+delta1 = np.sqrt((50.6-49.8)**2+(46.9-47.2)**2)
+print "delta1",delta1
+
+sc = ax1.scatter(-55.5,84,c='k',s=100,marker='*',label='NGC628', alpha=alpha,cmap=cm)
+sc = ax1.scatter(-57.6,86.2,c='g',s=100,marker='d',label='NGC628', alpha=alpha,cmap=cm)
+
+delta2 = np.sqrt((55.5-57.6)**2+(84-86.2)**2)
+print "delta2",delta2
+
+
+sc = ax1.scatter(-37.6,112.7,c='k',s=100,marker='*',label='NGC628', alpha=alpha,cmap=cm)
+sc = ax1.scatter(-39.7,116.9,c='g',s=100,marker='d',label='NGC628', alpha=alpha,cmap=cm)
+
+delta3 = np.sqrt((37.6-39.7)**2+(112.7-116.9)**2)
+print "delta3",delta3
+
+sc = ax1.scatter(41.7,-122.1,c='k',s=100,marker='*',label='NGC628', alpha=alpha,cmap=cm)
+sc = ax1.scatter(41.5,-121,c='g',s=100,marker='d',label='NGC628', alpha=alpha,cmap=cm)
+
+delta4 = np.sqrt((41.7-41.5)**2+(122.1-121)**2)
+print "delta4",delta4
+
+sc = ax1.scatter(-59.4,-112.4,c='k',s=100,marker='*',label='NGC628', alpha=alpha,cmap=cm)
+sc = ax1.scatter(-61.9,-109.8,c='g',s=100,marker='d',label='NGC628', alpha=alpha,cmap=cm)
+
+delta5 = np.sqrt((59.4-61.9)**2+(112.4-109.8)**2)
+print "delta5",delta5
+
+sc = ax1.scatter(-40.2,-158.9,c='k',s=100,marker='*',label='NGC628', alpha=alpha,cmap=cm)
+#sc = ax1.scatter(-45.8,-157.1,c='g',s=100,marker='d',label='NGC628', alpha=alpha,cmap=cm)
+
+delta6 = np.sqrt((40.2-45.8)**2+(158.9-157.1)**2)
+print "delta6",delta6
+
+sc = ax1.scatter(80.4,-138.8,c='k',s=100,marker='*',label='NGC628', alpha=alpha,cmap=cm)
+sc = ax1.scatter(78.5,-139,c='g',s=100,marker='d',label='NGC628', alpha=alpha,cmap=cm)
+
+delta7 = np.sqrt((80.4-78.5)**2+(138.8-139)**2)
+print "delta7",delta7
+'''
+
+'''
+#cb.set_label(r'12+log(O/H)_Thesis', fontweight='bold',fontsize=12)
+ax1.set_xlabel(r'$\Delta RA$ $[arcsec]$',fontsize=18)
+ax1.set_ylabel(r'$\Delta Dec$ $[arcsec]$',fontsize=18)
+ax1.text(180,203 , 'Calibrator_Thesis \n OH_NGC628', style='italic',bbox={'facecolor':'red', 'alpha':0.5, 'pad':20})
+ax1.text(-205,-185 , r'$\rho_{25}$', fontsize= 20,style='oblique',bbox={'facecolor':'blue', 'alpha':0.4, 'pad':10})
+ax1.text(-10,228 , 'N', fontsize= 16,style='oblique',bbox={'facecolor':'none', 'alpha':0.4, 'pad':5})
+ax1.text(240,-25 , 'E', fontsize= 16,style='oblique',bbox={'facecolor':'none', 'alpha':0.4, 'pad':5})
+#ax1.text(-155,215 , 'n = ', fontsize= 16,style='oblique',bbox={'facecolor':'none', 'alpha':0.4, 'pad':5})
+#ax1.set_title("Calibrator_tesis",fontweight='bold',fontsize=18)
+ax1.minorticks_on()
+ax1.tick_params(axis='both',which='minor',length=5,width=2,labelsize=18)
+ax1.tick_params(axis='both',which='major',length=11,width=2,labelsize=18)
+
+
+#ax1.legend(loc = 'best', numpoints=1, fancybox=False, fontsize = 12)
+f1.tight_layout()
+plt.show()
+plt.ion()
+'''
+
+
+#OXYGEN ABUNDANCES PLOTS
+
+'''
+def OH_plotter_628(param1, param2, tag1, tag2):
+
+    size=60
+    alpha = 0.6
+    cm = plt.cm.get_cmap('nipy_spectral')
+
+    fig1, ax1 = plt.subplots(figsize=(10, 8))
+    fig1.patch.set_facecolor('white')
+
+    ax1 = plt.gca()
+    divider = make_axes_locatable(ax1)
+    cax = divider.append_axes("right", size="7%", pad=0.01)
+
+    ax1.set_xlim((7.5,9.5))
+    ax1.set_ylim((7.5,9.5))
+    ax1.plot((7.5,9.5), (7.5,9.5), 'k',linewidth=1)
+    
+    sc_628 = ax1.scatter(param1, param2, c=OH,s=20*OH,marker='8', alpha=alpha,cmap=cm )
+    cb = plt.colorbar(sc_628,cax=cax)
+
+    ax1.set_xlabel(r'{}'.format(tag1))
+    ax1.set_ylabel(r'{}'.format(tag2))
+    #ax.set_title("OH_out_NGC628_12",fontweight='bold',fontsize=18)
+    ax1.minorticks_on()
+    ax1.tick_params(axis='both',which='minor',length=5,width=2,labelsize=18)
+    ax1.tick_params(axis='both',which='major',length=11,width=2,labelsize=18)
+    ax1.text(7.56, 9.38, 'NGC628', style='italic',bbox={'facecolor':'red', 'alpha':0.5, 'pad':20})
+    #ax.text(9.1, 7.6, r'n_pol = {}'.format(tag3)', style='italic',bbox={'facecolor':'red', 'alpha':0.5, 'pad':20})
+    
+    fig1.tight_layout()
+    plt.show()
+    plt.ion()
+
+    return sc_628
+
+sc_1 = OH_plotter_628(Pilyugin,OH_mean_out_628,'12+log(O/H)_[ONS]','12+log(O/H)_[Thesis]')
+sc_2 = OH_plotter_628(Marino_O3N2,OH_mean_out_628,'12+log(O/H)_[O3N2]','12+log(O/H)_[Thesis]')
+sc_3 = OH_plotter_628(Marino_N2,OH_mean_out_628,'12+log(O/H)_[N2]','12+log(O/H)_[Thesis]')
+'''
+
+def OH_plotter_Marino(param1, param2, tag1, tag2):
+
+    size=60
+    alpha = 0.6
+    cm = plt.cm.get_cmap('nipy_spectral')
+    
+    fig, ax = plt.subplots(figsize=(10, 8))
+    fig.patch.set_facecolor('white')
+
+    ax = plt.gca()
+    divider = make_axes_locatable(ax)
+    #cax = divider.append_axes("right", size="7%", pad=0.01)
+    #ax.axvline(x=7.8, c='r',linestyle='-',linewidth=0.5)
+    #ax.axhline(y=8.7684, c='b',linestyle='-',linewidth=0.5)
+    #ax.axhline(y=8.1692, c='b',linestyle='-',linewidth=0.5)
+    #ax.axvline(x=8.1692, c='r',linestyle='--',linewidth=0.2)
+    #ax.axvline(x=8.7684, c='r',linestyle='--',linewidth=0.2)
+    #ax.axvline(x=8.0038, c='r',linestyle='--',linewidth=0.2)
+    #ax.axvline(x=8.6506, c='r',linestyle='--',linewidth=0.2)
+    #ax.axvline(x=2.0, c='g',linestyle='--',linewidth=1.5)
+    #ax.axhline(y=7.8, c='k',linestyle='--',linewidth=1.5)
+    #ax.axvline(x=-2.5, c='k',linestyle='--',linewidth=1.5)
+    #ax.axvline(x=-0.3, c='k',linestyle='--',linewidth=1.5)
+    #ax.axvline(x=-1.6, c='r',linestyle='--',linewidth=1.5)
+    #ax.axvline(x=-0.2, c='r',linestyle='--',linewidth=1.5)
+    #ax.set_ylim((6.9,9.0))
+    ax.set_xlim((6.5,9.5))
+    ax.set_ylim((6.5,9.5))
+    ax.plot((6.5,9.5), (6.5,9.5), 'k',linewidth=1)
+    ax.plot((6.89,9.89), (6.5,9.5), 'k--',linewidth=1.5)
+    ax.plot((6.5,9.5), (6.89,9.89), 'k--',linewidth=1.5)
+    #ax.plot((6.64,9.64), (6.5,9.5), 'r--',linewidth=1.5)
+    #ax.plot((6.5,9.5), (6.64,9.64), 'r--',linewidth=1.5)
+
+    sc_Mar = ax.scatter(param1, param2, c=OH_mean_out_M,s=90,marker='8', alpha=alpha,cmap=cm)
+    #cb = plt.colorbar(sc_Mar,cax=cax)
+    #cb.ax.tick_params(labelsize=25)
+    #cb.set_label('12+log(O/H)', fontweight='bold',fontsize=25)
+    ax.set_xlabel(r'{}'.format(tag1),size=25,fontweight='bold')
+    ax.set_ylabel(r'{}'.format(tag2),size=25,fontweight='bold')
+    #ax.set_title("OH_out_NGC628_12",fontweight='bold',fontsize=18)
+    ax.minorticks_on()
+    ax.tick_params(axis='both',which='minor',length=5,width=2,labelsize=25)
+    ax.tick_params(axis='both',which='major',length=11,width=2,labelsize=25)
+    #ax.text(6.6, 9.3, 'Te-based', style='italic',size=20)
+    #ax.text(-2.3, 8.8, 'Te-based', style='italic',size=20)
+    #ax.text(9.1, 7.6, r'n_pol = {}'.format(tag3)', style='italic',bbox={'facecolor':'red', 'alpha':0.5, 'pad':20})
+    ax.plot((),(),'k--',label='$\sigma$ = 0.13 dex')
+    #ax.plot((),(),'',label='O/H[out] = ')
+    ax.legend(loc = 'best', numpoints=1, fancybox=True,fontsize=25)
+    
+    #plt.savefig('/home/manga/Google Drive/negra/Maestria/sem4/seminario_Titula/Resultados_plots/templots/OHN2M.pdf',format='pdf',dpi=100)
+    plt.tight_layout()
+    plt.show()
+    plt.ion()
+    return sc_Mar
+
+sc1 = OH_plotter_Marino(OH_Te,OH_mean_out_M,'12+log(O/H) [Te]','12+log(O/H) [MRC]')
+
+#sc1 = OH_plotter_Marino(M_O3N2,OH_mean_out_M,'12+log(O/H) [O3N2]','12+log(O/H) [MRC]')
+#sc1 = OH_plotter_Marino(M_O3N2,OH_Te,'12+log(O/H) [O3N2]','12+log(O/H) [Te]')
+#sc1 = OH_plotter_Marino(np.log10(2.8*R3N2_M),OH_Te,'log(O3N2)','12+log(O/H) [Te]')
+#sc1 = OH_plotter_Marino(np.log10(2.87*R3N2_M),OH_mean_out_M,'log(O3N2)','12+log(O/H) [out]')
+
+#sc1 = OH_plotter_Marino(M_Pil,OH_mean_out_M,'12+log(O/H) [ONS]','12+log(O/H) [MRC]')
+#sc1 = OH_plotter_Marino(M_Pil,OH_Te,'12+log(O/H) [ONS]','12+log(O/H) [Te]')
+#sc1 = OH_plotter_Marino(np.log10(R3N2_M),M_Pil,'log(O3N2)','12+log(O/H) [ONS]')
+
+#sc1 = OH_plotter_Marino(M_N2,OH_mean_out_M,'12+log(O/H) [N2]','12+log(O/H) [MRC]')
+#sc1 = OH_plotter_Marino(M_N2,OH_Te,'12+log(O/H) [N2]','12+log(O/H) [Te]')
+#sc1 = OH_plotter_Marino(np.log10((1/2.86)*N2_M),OH_Te,'log(N2)','12+log(O/H) [Te]')
+#sc1 = OH_plotter_Marino(np.log10((1/2.86)*N2_M),OH_mean_out_M,'log(N2)','12+log(O/H) [out]')
+
+
+'''
+#Abundancia de Nitrogeno (PMC09)
+
+#NO = 0.93*log10(N2R2_M) - 0.20
+#plt.scatter(log10(N2R2_M), NO, c='b',s=90,marker='8', alpha=0.7)
+plt.scatter(log(N2R2), OH_mean_out_628, c='g',s=90,marker='8', alpha=0.6)
+plt.xlabel('N2R2')
+plt.ylabel('12+log(O/H)')
+#plt.ylabel('log(N/O)')
+plt.show()
+plt.ion()
+'''
+'''
+fig, ax2 = plt.subplots(figsize=(10,5))
+size=60
+alpha = 0.9
+cm = plt.cm.get_cmap('nipy_spectral')
+fig.patch.set_facecolor('white')
+ax2.set_ylim((-0.8,0.5))
+#ax2.axvline(x=0, c='k')
+ax2.axhline(y=0, color='k',linewidth=2)
+ax2.axhline(y=0.129764499813, color='k',linestyle='--',linewidth=1)
+ax2.axhline(y=-0.129764499813, color='k',linestyle='--',linewidth=1)
+ax2 = plt.gca()
+divider = make_axes_locatable(ax2)
+cax = divider.append_axes("right", size="7%", pad=0.01)
+
+#ax2.set_xlim((6.5,9.5))
+
+#ax2.plot((6.5,9.5), (6.5,9.5), 'k',linewidth=1)
+
+delta_OH_Marino = ax2.scatter(OH_Te,Delta_mean_OH_M, c=OH_Te,s=10*OH_Te,marker='8', alpha=alpha,cmap=cm)
+#cb = plt.colorbar(delta_OH_Marino,cax=cax)
+#cb.ax.tick_params(labelsize=16)
+
+ax2.set_xlabel(r'12+log(O/H) [Te]',fontsize=18,fontweight='bold')
+ax2.set_ylabel(r'log(O/H) [Te] - log(O/H) [out]',fontsize=18,fontweight='bold')
+#ax.set_title("OH_out_NGC628_12",fontweight='bold',fontsize=18)
+ax2.minorticks_on()
+ax2.tick_params(axis='both',which='minor',length=5,width=2,labelsize=18)
+ax2.tick_params(axis='both',which='major',length=11,width=2,labelsize=18)
+#ax2.text(6.6, 9.3, 'Regiones_Marino', style='italic',bbox={'facecolor':'red', 'alpha':0.5, 'pad':20})
+#ax.text(9.1, 7.6, r'n_pol = {}'.format(tag3)', style='italic',bbox={'facecolor':'red', 'alpha':0.5, 'pad':20})
+
+fig.tight_layout()
+plt.show()
+plt.ion()
+#plt.savefig('/home/manga/Google Drive/negra/Maestria/sem4/seminario_Titula/Resultados_plots/templots/deltaOHTe.pdf',format='pdf',dpi=100)
+'''
+
+'''
+def delta_OH_plotter_628(param1, param2, tag1, tag2):
+
+    size=60
+    alpha = 0.6
+    cm = plt.cm.get_cmap('nipy_spectral')
+
+    fig1, ax1 = plt.subplots(figsize=(10, 6))
+    fig1.patch.set_facecolor('white')
+
+    ax1 = plt.gca()
+    divider = make_axes_locatable(ax1)
+    cax = divider.append_axes("right", size="7%", pad=0.01)
+
+    ax1.set_ylim((-1.2,1.2))
+
+
+    fig1.tight_layout()
+    plt.show()
+    plt.ion()
+
+    return delta_OH_628
+
+sc_1 = delta_OH_plotter_628(Pilyugin,Delta_mean_OH_628_1,'$\mathbf{12+log(O/H)_{ONS}}$','$\mathbf{log(O/H)_{Thesis} - log(O/H)_{ONS}}$')
+sc_2 = delta_OH_plotter_628(Marino_O3N2,Delta_mean_OH_628_2,'$\mathbf{12+log(O/H)_{O3N2}}$','$\mathbf{log(O/H)_{Thesis} - log(O/H)_{O3N2}}$')
+sc_3 = delta_OH_plotter_628(Marino_N2,Delta_mean_OH_628_3,'$\mathbf{12+log(O/H)_{N2}}$','$\mathbf{log(O/H)_{Thesis} - log(O/H)_{N2}}$')
+
+
+
+#print OH_mean_out_M
+np.savetxt('OH_out_sinpropagaionerrores.csv',OH_mean_out_M,fmt='%1.5f')
+'''
+'''
+Delta_ONS_OH_out =  M_Pil - OH_mean_out_M
+#print Delta_mean_OH_M
+mean_Delta_OH_mean_M = np.mean(Delta_ONS_OH_out)
+sigma_Delta_OH_mean_M = np.std(Delta_ONS_OH_out)
+#print OH_mean_out_M
+
+#print M_Pil
+#np.savetxt('OH_out_ONS.csv',M_Pil,fmt='%1.5f')
+print 'offset O/H_ONS =', mean_Delta_OH_mean_M, sigma_Delta_OH_mean_M
+
+
+
+Delta =  M_O3N2 - OH_mean_out_M
+#print Delta_mean_OH_M
+mean_Delta_OH_mean_M = np.mean(Delta)
+sigma_Delta_OH_mean_M = np.std(Delta)
+#print OH_mean_out_M
+#print M_O3N2
+#np.savetxt('OH_out_O3N2.csv',M_O3N2,fmt='%1.5f')
+print 'offset O/H_O3N2 =', mean_Delta_OH_mean_M, sigma_Delta_OH_mean_M
+
+
+
+Delta =  M_N2 - OH_mean_out_M
+#print Delta_mean_OH_M
+mean_Delta_OH_mean_M = np.mean(Delta)
+sigma_Delta_OH_mean_M = np.std(Delta)
+#print OH_mean_out_M
+#print M_N2
+#np.savetxt('OH_out_N2.csv',M_N2,fmt='%1.5f')
+print 'offset O/H_N2 =', mean_Delta_OH_mean_M, sigma_Delta_OH_mean_M
+
+
+
+Delta =  OH_Te - M_O3N2
+#print Delta_mean_OH_M
+mean_Delta_OH_mean_M = np.mean(Delta)
+sigma_Delta_OH_mean_M = np.std(Delta)
+#print OH_mean_out_M
+
+print 'offset O/H_Te_O3N2 =', mean_Delta_OH_mean_M, sigma_Delta_OH_mean_M
+
+
+Delta =  OH_Te - ma.masked_invalid(M_Pil)
+#print Delta_mean_OH_M
+mean_Delta_OH_mean_M = np.mean(Delta)
+sigma_Delta_OH_mean_M = np.std(Delta)
+#print OH_mean_out_M
+
+print 'offset O/H_Te_ONS =', mean_Delta_OH_mean_M, sigma_Delta_OH_mean_M
+'''
+
+'''
+
+#======================Delta_OH_out_fit==========================#
+
+Delta_OH = OH_Te - OH_mean_out_M
+mean_Delta_OH = np.mean(Delta_OH)
+sigma_Delta_OH = np.std(Delta_OH)
+
+#print 'offset O/H=', mean_Delta_OH, sigma_Delta_OH
+print('delta_OH: {}, stddev: {:1.4f}'.format(mean_Delta_OH,sigma_Delta_OH))
+
+#================================================================#
+
+fig, ax2 = plt.subplots(figsize=(10, 6))
+size=60
+alpha = 0.9
+cm = plt.cm.get_cmap('nipy_spectral')
+fig.patch.set_facecolor('white')
+
+#delta_OH = ax2.scatter(OH_Te,Delta_OH, c=OH_Te,s=90,marker='8', alpha=alpha,cmap=cm)
+delta_OH = ax2.scatter(OH_Te,Delta_OH, c=OH_mean_out_M,s=90,marker='8', alpha=alpha,cmap=cm)
+
+
+#ax2.set_ylim((-1.2,1.2))
+#ax2.axvline(x=0, c='k')
+ax2.axhline(y=0, color='k',linewidth=2)
+ax2.axhline(y=3*sigma_Delta_OH, color='k',linestyle='--',linewidth=1)
+ax2.axhline(y=-3*sigma_Delta_OH, color='k',linestyle='--',linewidth=1)
+#ax2 = plt.gca()
+divider = make_axes_locatable(ax2)
+#cax = divider.append_axes("right", size="7%", pad=0.01)
+
+#cb = plt.colorbar(delta_OH_fit,cax=cax)
+#cb.ax.tick_params(labelsize=16)
+
+
+axHistx = divider.append_axes("top", size=1.0, pad=0.0, sharex=ax2)
+axHisty = divider.append_axes("right", size=1.0, pad=0.0, sharey=ax2)
+
+plt.setp(axHistx.get_xticklabels() + axHisty.get_yticklabels(),
+         visible=False)
+
+plt.setp(axHistx.get_yticklabels() + axHisty.get_xticklabels(),
+         visible=False)
+
+binwidth = 0.1
+xymax = np.max([np.max(np.fabs(OH_Te)), np.max(np.fabs(Delta_OH))])
+lim = (float(xymax/binwidth) + 1) * binwidth
+
+ax2.set_xlim((7.0,9.0))
+ax2.set_ylim((-0.9, 0.9))
+
+bins = np.arange(-lim, lim + binwidth, binwidth)
+axHistx.hist(OH_Te, bins=bins,normed=1,facecolor='green',alpha=0.75)
+axHisty.hist(Delta_OH, bins=bins, orientation='horizontal',normed=1,alpha=0.75)
+
+ax2.set_xlabel(r'12+log(O/H) [Te]',size=16,fontweight='bold')
+ax2.set_ylabel(r'log(O/H) [Te] - log(O/H) [MRC]',size=16,fontweight='bold')
+ax2.minorticks_on()
+ax2.tick_params(axis='both',which='minor',length=5,width=2,labelsize=18)
+ax2.tick_params(axis='both',which='major',length=11,width=2,labelsize=18)
+
+plt.savefig('/home/manga/Google Drive/negra/Maestria/sem4/seminario_Titula/Resultados_plots/templots/delta_colorOHout.pdf',format='pdf',dpi=100)
+fig.tight_layout()
+
+
+plt.show() 
+plt.ion() 
+'''
+'''
+#=========================Plots===============================#
+#NGC628
+#RADIAL GRADIENTS O/H
+#pil = ma.masked_invalid(Pilyu)
+def radial(par1,par2,tag1,tag2,**args):
+    size=60
+    alpha = 0.6
+    cm = plt.cm.get_cmap('nipy_spectral')
+    f1, ax1 = plt.subplots(figsize=(8,6))
+    #divider = make_axes_locatable(ax1)
+    #cax = divider.append_axes("right", size="7%", pad=0.01)
+    f1.patch.set_facecolor('white')
+    ax1.set_xlim((0.0,0.8))
+    ax1.set_ylim((8.0,9.1))
+    sc = ax1.scatter(par1,par2,marker='o',c='g', s=90 ,label='NGC628', alpha=alpha,cmap=cm)
+    #cb = plt.colorbar(sc,cax=cax)
+    #cb.ax.tick_params(labelsize=16)
+    ax1.set_xlabel(r'{}'.format(tag1),fontweight='bold',fontsize=20)
+    ax1.set_ylabel(r'{}'.format(tag2),fontweight='bold',fontsize=20)
+    ax1.text(0.65, 9.3, 'NGC628', style='italic',size=20)
+    #ax1.set_title("O3N2",fontweight='bold',fontsize=16)
+    ax1.minorticks_on()
+    ax1.tick_params(axis='both',which='minor',length=5,width=2,labelsize=18)
+    ax1.tick_params(axis='both',which='major',length=11,width=2,labelsize=18)
+    f1.tight_layout()
+    #plt.savefig('/home/manga/Google Drive/negra/Maestria/sem4/seminario_Titula/Resultados_plots/templots/OH_ons_grad.pdf',format='pdf',dpi=100)
+    plt.show()
+    plt.ion()
+
+    return sc
+
+#sc_1 = radial(radius,OH_mean_out_628,'R/R$_{25}$','12 + log(O/H) [MRC]')
+#sc_2 = radial(radius,ngc_O3N2,'R/R$_{25}$','12 + log(O/H) [O3N2]')
+#sc_3 = radial(radius,ngc_N2,'R/R$_{25}$','12 + log(O/H) [N2]')
+#sc_4 = radial(radius,Pilyu,'R/R$_{25}$','12 + log(O/H) [ONS]')
+
+#sc_1 = radial(radius,NO,'R/R$_{25}$','log(N/O) [N2R2]')
+'''
