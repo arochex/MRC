@@ -9,7 +9,7 @@ Several studies use the emission lines fluxes of the star forming galaxies to de
 
 pyMRC is a code that use multi emission line ratios to derive the oxygen abundance through a large sample of HII regions anchored to Te-based measurements. 
 
-# MRC DIAGRAM 
+# MRC STEPS
 
 Next, the elements and operation of the pyMRC code is presented. 
 
