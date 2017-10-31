@@ -31,23 +31,23 @@ where:
 
 a) catalog_M13.csv:  is a catalog that comprises the fluxes and ratios of the stronger emission lines detected in each HII region (Marino et al. 2013). It uses the following format:
 
-# COLUMN1: ID, string, the ID of the galaxy.
-# COLUMN2: reference literature papers, string, the reference strings are: CAL --->CALIFA; BER12 -->Berg et al. (2012); BRE12 --->Bresolin et al. (2012); CrB09 --->Crowther & Bibby (2009); Cro09 --->Croxall et al. (2009); Est13 --->Esteban et al. (2013); Gbe10 --->Garcia-Benito et al. (2010); Gus12 -->Guseva et al. (2012); Had11 --->Hadfield & Crowther (2007); Keh11 --->Kehrig et al. (2011); Mon12 ---> Monreal-Ibero et al. (2012a); PMC09r# --->Perez-Montero & Contini (2009); P12--->Pilyugin et al. (2012) ; San12 --->Sanders et al. (2012); Sta13 --->Stasinska et al. (2013); Wes13 --->Westmoquette et al. (2013); ZaB11--->Zahid & Bresolin (2011); ZB12 ---> Zurita & Bresolin (2012). 
-# COLUMN3: [OII]3727, float, dust-extinction-corrected line flux. I adopt a Cardelli 1989 extiction law (1989ApJ...345..245C) with Rv=3.1 and AV/AHβ= 1.164. 
-# COLUMN4: [OII]3729, float, dust-extinction-corrected line flux. 
-# COLUMN5: [OIII]4363, float, dust-extinction-corrected line flux.
-# COLUMN6: [OIII]4959, float, dust-extinction-corrected line flux.
-# COLUMN7: [OIII]5007, float, dust-extinction-corrected line flux.
-# COLUMN8: [NII]5755, float, dust-extinction-corrected line flux.
-# COLUMN9: [NII]6548, float, dust-extinction-corrected line flux.
-# COLUMN10: [NII]6584, float, dust-extinction-corrected line flux.
-# COLUMN11: [SIII]6312, float, dust-extinction-corrected line flux.
-# COLUMN12: [SII]6717, float, dust-extinction-corrected line flux. 
-# COLUMN13: [SII]6731, float, dust-extinction-corrected line flux. 
-# COLUMN14: jD, integer, the index jD indicates what doublets ([OII], [SII]) were resolved in the original source. (0=[OII], [SII] are resolved; 1= only [SII] is resolved and we assume [OII]3729/[OII]3726=1.5; 2= none is resolved, we assume [OII]3729/[OII]3726=1.5 and [SII]6717/[SII]6731=1.5)
-# COLUMN15: jT, integer, the index jT is 1 when the electron temperature is derived from the auroral and nebular lines of [O III], is 2 when the [N II] lines are used, and 3 for the case of [S III].
-# COLUMN16: T3 (in units of 10^4 K).
-# COLUMN17: 12+log(O/H), float, Abundance computed from the electron temperature.
+COLUMN1: ID, string, the ID of the galaxy.
+COLUMN2: reference literature papers, string, the reference strings are: CAL --->CALIFA; BER12 -->Berg et al. (2012); BRE12 --->Bresolin et al. (2012); CrB09 --->Crowther & Bibby (2009); Cro09 --->Croxall et al. (2009); Est13 --->Esteban et al. (2013); Gbe10 --->Garcia-Benito et al. (2010); Gus12 -->Guseva et al. (2012); Had11 --->Hadfield & Crowther (2007); Keh11 --->Kehrig et al. (2011); Mon12 ---> Monreal-Ibero et al. (2012a); PMC09r# --->Perez-Montero & Contini (2009); P12--->Pilyugin et al. (2012) ; San12 --->Sanders et al. (2012); Sta13 --->Stasinska et al. (2013); Wes13 --->Westmoquette et al. (2013); ZaB11--->Zahid & Bresolin (2011); ZB12 ---> Zurita & Bresolin (2012). 
+COLUMN3: [OII]3727, float, dust-extinction-corrected line flux. I adopt a Cardelli 1989 extiction law (1989ApJ...345..245C) with Rv=3.1 and AV/AHβ= 1.164. 
+COLUMN4: [OII]3729, float, dust-extinction-corrected line flux. 
+COLUMN5: [OIII]4363, float, dust-extinction-corrected line flux.
+COLUMN6: [OIII]4959, float, dust-extinction-corrected line flux.
+COLUMN7: [OIII]5007, float, dust-extinction-corrected line flux.
+COLUMN8: [NII]5755, float, dust-extinction-corrected line flux.
+COLUMN9: [NII]6548, float, dust-extinction-corrected line flux.
+COLUMN10: [NII]6584, float, dust-extinction-corrected line flux.
+COLUMN11: [SIII]6312, float, dust-extinction-corrected line flux.
+COLUMN12: [SII]6717, float, dust-extinction-corrected line flux. 
+COLUMN13: [SII]6731, float, dust-extinction-corrected line flux. 
+COLUMN14: jD, integer, the index jD indicates what doublets ([OII], [SII]) were resolved in the original source. (0=[OII], [SII] are resolved; 1= only [SII] is resolved and we assume [OII]3729/[OII]3726=1.5; 2= none is resolved, we assume [OII]3729/[OII]3726=1.5 and [SII]6717/[SII]6731=1.5)
+COLUMN15: jT, integer, the index jT is 1 when the electron temperature is derived from the auroral and nebular lines of [O III], is 2 when the [N II] lines are used, and 3 for the case of [S III].
+COLUMN16: T3 (in units of 10^4 K).
+COLUMN17: 12+log(O/H), float, Abundance computed from the electron temperature.
  
 
 b) coeff_5.fits: is the file.fits that contains the coefficients of the 2D polynomial to evaluate.
@@ -68,21 +68,21 @@ where:
 
 a) catalog_M13.csv:  is a catalog that comprises the fluxes  plus flux errors  in each HII region (Marino et al. 2013). It uses the following format:
 
-#COLUMNA1:  [OII]3727+[OII]3729
-#COLUMNA2:  e_([OII]3727+[OII]3729), error del flujo de linea
-#COLUMNA3:  Hbeta_4861, float, 10e-16 erg s^-1 cm^-2, flujo observado de la linea Hb
-#COLUMNA4:  e_Hbeta_4861, error del flujo observado de la linea Hb
-#COLUMNA5: [OIII]5007
-#COLUMNA6: e_[OIII]5007
-#COLUMNA7: Ha_6563
-#COLUMNA8: e_Ha_6563
-#COLUMNA9: [NII]6584
-#COLUMNA10: e_[NII]6584
-#COLUMNA11: [SII]6717
-#COLUMNA12: e_[SII]6717
-#COLUMNA13: [SII]6731
-#COLUMNA14: e_[SII]6731
-#COLUMNA15: OH_Te, Marino et al. (2013)
+COLUMNA1:  [OII]3727+[OII]3729
+COLUMNA2:  e_([OII]3727+[OII]3729), error del flujo de linea
+COLUMNA3:  Hbeta_4861, float, 10e-16 erg s^-1 cm^-2, flujo observado de la linea Hb
+COLUMNA4:  e_Hbeta_4861, error del flujo observado de la linea Hb
+COLUMNA5: [OIII]5007
+COLUMNA6: e_[OIII]5007
+COLUMNA7: Ha_6563
+COLUMNA8: e_Ha_6563
+COLUMNA9: [NII]6584
+COLUMNA10: e_[NII]6584
+COLUMNA11: [SII]6717
+COLUMNA12: e_[SII]6717
+COLUMNA13: [SII]6731
+COLUMNA14: e_[SII]6731
+COLUMNA15: OH_Te, Marino et al. (2013)
 
 
 b) Gaussian Width : 1  
